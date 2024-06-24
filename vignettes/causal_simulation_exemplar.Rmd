@@ -1,0 +1,1662 @@
+---
+title: "Causal Simulation Exemplar"
+author:
+  - name: Herdiantri Sufriyana
+    affiliation:
+    - &gibi Graduate Institute of Biomedical Informatics, College of Medical
+      Science and Technology, Taipei Medical University, Taipei, Taiwan. 
+    - Department of Medical Physiology, Faculty of Medicine, Universitas
+      Nahdlatul Ulama Surabaya, Surabaya, Indonesia. 
+    email: herdi@tmu.edu.tw
+  - name: Emily Chia-Yu Su
+    affiliation:
+    - *gibi
+    - Clinical Big Data Research Center, Taipei Medical University
+      Hospital, Taipei, Taiwan. 
+    - Research Center for Artificial Intelligence in Medicine, Taipei Medical
+      University, Taipei, Taiwan. 
+date: "2024-05-18"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+vignette: >
+  %\VignetteIndexEntry{Causal Simulation Exemplar}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Introduction to Causal Graphs
+
+To generate causally-simulated data effectively, it is essential to understand how to represent cause-and-effect relationships using causal graphs. We use the `igraph` package for creating and manipulating network structures and the `ggnetwork` package for visualizing these networks within the ggplot2 framework of the `tidyverse` package. Below is how to load these libraries in R:
+
+```{r echo=TRUE, results='hide', message=FALSE, warning=FALSE}
+library(igraph)
+library(ggnetwork)
+library(tidyverse)
+```
+
+```{r include=FALSE}
+library(knitr)
+library(kableExtra)
+library(ggpubr)
+```
+
+We will use \(X\) and \(Y\) respectively to denote a cause and an effect. Both are represented as vertices in a graph. If there is a cause-and-effect relationship between both, then an edge is drawn from \(X\) to \(Y\). To do this, we need a 2-column data frame: (1) from, and (2) to.
+
+```{r}
+# Create a data frame for the X and Y relationship
+d <- data.frame(from = "X", to = "Y")
+```
+
+```{r echo=FALSE}
+d %>%
+  kable() %>%
+  kable_classic()
+```
+
+We convert the data frame into an `igraph` object as a directed graph.
+
+```{r}
+# Convert the data frame into an igraph object.
+g <- graph_from_data_frame(d, directed = TRUE)
+print(g)
+```
+
+To visualize the graph, we need to automatically determine the coordinates to plot \(X\) and \(Y\) and draw a line from \(X\) to \(Y\).
+
+```{r}
+# Lay out the graph as a tree
+g_layout <- layout_as_tree(g)
+
+# Determine the coordinates with ggnetwork
+set.seed(1)
+g_coord <- ggnetwork(g, layout = g_layout)
+```
+
+```{r echo=FALSE}
+g_coord %>%
+  kable() %>%
+  kable_classic()
+```
+
+To draw the graph, we utilize `ggplot` for its flexibility in customizing graph aesthetics. Use closed and curved arrows to clearly indicate the direction of the causal effect and helps prevent overlapping of arrows.
+
+We may need to make the tree layout horizontal. This orientation helps in visualizing the causal flow from left to right, making it easier to follow.
+
+```{r fig.height=3.5, fig.width=7}
+# Define the plot area
+g_plot <- ggplot(g_coord, aes(x, y, xend = xend, yend = yend))
+
+# Draw edges with closed, curved arrows to emphasize direction
+g_plot <- g_plot + geom_edges(arrow = arrow(type = "closed"), curvature = 0.15)
+
+# Add node labels
+g_plot <- g_plot + geom_nodelabel(aes(label = name))
+
+# Make the tree layout horizontal
+g_plot <- g_plot + coord_flip()
+g_plot <- g_plot + scale_y_reverse()
+
+# Apply a minimal theme
+g_plot <- g_plot + theme_void()
+
+# Display the graph
+print(g_plot)
+```
+
+## Vertex and edge
+
+A variable is represented as a vertex, and a path is represented as 1 or more edges. Two variables may have a path between them. It means \(X\) and \(Y\) are dependent.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+print(g_plot)
+```
+
+It is also possible for two variables to have no path between them. It means \(X\) and \(Y\) are independent.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+g_coord %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+## Path
+
+If two variables have a path between them, there are four possible paths. First, a path consists of a single edge, which we call a ***causal path***.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+print(g_plot)
+```
+
+Second, a path consists of more than one edges with 1 or more mediators, which we call a ***mediator path***. A mediator is connected by two edges: one from \(X\) to \(M\) and another from \(M\) to \(Y\).
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+data.frame(from = "X", to = "M") %>%
+  add_row(data.frame(from = "M", to = "Y")) %>%
+  graph_from_data_frame(directed = TRUE) %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.15) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+Third, a path consists of more than one edges with 1 or more confounders, which is called a ***confounder path***. A confounder is connected by two edges: one to \(X\) and another to \(Y\). 
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+data.frame(from = "C", to = "X") %>%
+  add_row(data.frame(from = "C", to = "Y")) %>%
+  graph_from_data_frame(directed = TRUE)%>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.15) +
+  geom_nodelabel(aes(label = name)) +
+  theme_void()
+```
+
+Fourth, a path consists of more than one edges with 1 or more colliders, i.e., a ***collider path***. A collider is connected by two edges coming from \(X\) and \(Y\) to \(K\).
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+data.frame(from = "X", to = "K") %>%
+  add_row(data.frame(from = "Y", to = "K")) %>%
+  graph_from_data_frame(directed = TRUE) %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.15) +
+  geom_nodelabel(aes(label = name)) +
+  scale_y_reverse() +
+  theme_void()
+```
+
+# Correlation and causation
+
+We will empirically test these theoretical distinctions by generating causally-simulated data and conducting regression analysis. For this, we utilize the `rcausim` package for data generation and the `broom` package to tidy up the results from our correlation analysis.
+
+```{r echo=TRUE, results='hide', message=FALSE, warning=FALSE}
+library(rcausim)
+library(broom)
+```
+
+## Causal and mediator paths allow both
+
+We start by defining a `Functions` class based on the specified causal structure in our previous data frame `d`. This class will help specify the required arguments for each variable's function.
+
+```{r}
+path1_functions <- function_from_edge(d)
+print(path1_functions)
+```
+
+Next, we define a function for \(X\) that generates a normally distributed numeric vector of length `n`.
+
+```{r}
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+```
+
+For Y, we create a linear function that is dependent on `X` for \(Y\).
+
+```{r}
+function_Y <- function(X){
+  Y <- 0.5 * X + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+```
+
+We now define `path1_functions` using `function_X` and `function_Y`.
+
+```{r}
+path1_functions <- define(path1_functions, which = 'X', what = function_X)
+path1_functions <- define(path1_functions, which = 'Y', what = function_Y)
+print(path1_functions)
+```
+
+Generate data using `path1_functions`.
+
+```{r}
+set.seed(1)
+path1_data <- data_from_function(path1_functions, n = 25000)
+```
+
+```{r echo=FALSE}
+path1_data %>%
+  head() %>%
+  kable() %>%
+  kable_classic()
+```
+
+Finally, we perform a regression to infer the correlation between 
+\(X\) and \(Y\).
+
+```{r}
+path1_reg <- lm(Y ~ X, data = path1_data)
+path1_results <- tidy(path1_reg)
+```
+
+```{r echo=FALSE}
+path1_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+This output should show the estimated coefficients, their standard errors, \(z\)-values, and \(p\)-values. Results shows that \(X\) has a significant effect on \(Y\) (\(p\)-value <0.05). The estimated coefficients reflect the data generation process, providing a consistency check for our simulation.
+
+For the mediator path involving a mediator \(M\), we create a new data frame `d2`. This data frame specifies the edges from \(X\) to \(M\) and then from \(M\) to \(Y\).
+
+```{r}
+d2 <- data.frame(from = "X", to = "M")
+d2 <- add_row(d2, data.frame(from = "M", to = "Y"))
+```
+
+```{r echo=FALSE}
+d2 %>%
+  kable() %>%
+  kable_classic()
+```
+
+A new class of `Functions` is defined using `d2` to establish a path which involves a mediator. This step helps clarify the arguments in each function of \(X\), \(M\), and \(Y\).
+
+```{r}
+path2_functions <- function_from_edge(d2)
+print(path2_functions)
+```
+
+We reuse the same function for \(X\), where \(X\) is generated from a normal distribution.
+
+```{r}
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+```
+
+We also define a function for \(M\), which is directly influenced by \(X\).
+
+```{r}
+function_M <- function(X){
+  M <- 0.7 * X + rnorm(length(X), mean = 0.3, sd = 0.005)
+  return(M)
+}
+```
+
+Finally, we define a function for \(Y\) as a linear function of \(M\).
+
+```{r}
+function_Y <- function(M){
+  Y <- 0.5 * M + rnorm(length(M), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+```
+
+We define the `path2_functions` before generating data.
+
+```{r}
+path2_functions <- define(path2_functions, which = 'X', what = function_X)
+path2_functions <- define(path2_functions, which = 'M', what = function_M)
+path2_functions <- define(path2_functions, which = 'Y', what = function_Y)
+print(path2_functions)
+```
+
+With `path2_functions`, we generate data that represent the mediator path.
+
+```{r}
+set.seed(1)
+path2_data <- data_from_function(path2_functions, n = 25000)
+```
+
+```{r echo=FALSE}
+path2_data %>%
+  head() %>%
+  kable() %>%
+  kable_classic()
+```
+
+Another regression is performed to infer the correlation between \(X\) and \(Y\).
+
+```{r}
+path2_reg <- lm(Y ~ X, data = path2_data)
+path2_results <- tidy(path2_reg)
+```
+
+```{r echo=FALSE}
+path2_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+In our data generation process, \(M\) is defined as \(0.7 \times X + 0.3\), and \(Y\) as \(0.5 \times M + 0.1\); therefore, \(Y(X)\) equals \(0.5 \times (0.7 \times X + 0.3) + 0.1\). Solving this equation, we find that the estimated coefficients reflect the data generation process.
+
+## Confounder path allows correlation
+
+In the third path, both \(X\) and \(Y\) are influenced by \(C\), as shown in `d3` below.
+
+```{r}
+d3 <- data.frame(from = "C", to = "X")
+d3 <- add_row(d3, data.frame(from = "C", to = "Y"))
+```
+
+```{r echo=FALSE}
+d3 %>%
+  kable() %>%
+  kable_classic()
+```
+
+We clarify the arguments in the functions for each variable based on the data frame `d3`.
+
+```{r}
+path3_functions <- function_from_edge(d3)
+print(path3_functions)
+```
+
+We define a normal distribution for \(C\).
+
+```{r}
+function_C <- function(n){
+  C <- rnorm(n, mean = 0, sd = 1)
+  return(C)
+}
+```
+
+The value of \(X\) depends on \(C\).
+
+```{r}
+function_X <- function(C){
+  X <- 0.7 * C + rnorm(length(C), mean = 0.3, sd = 0.005)
+  return(X)
+}
+```
+
+Similarly, \(Y\) also depends on \(C\).
+
+```{r}
+function_Y <- function(C){
+  Y <- 0.5 * C + rnorm(length(C), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+```
+
+The functions are connected into `path3_functions`
+
+```{r}
+path3_functions <- define(path3_functions, which = 'C', what = function_C)
+path3_functions <- define(path3_functions, which = 'X', what = function_X)
+path3_functions <- define(path3_functions, which = 'Y', what = function_Y)
+print(path3_functions)
+```
+
+Data is generated using `path3_functions`.
+
+```{r}
+set.seed(1)
+path3_data <- data_from_function(path3_functions, n = 25000)
+```
+
+```{r echo=FALSE}
+path3_data %>%
+  head() %>%
+  kable() %>%
+  kable_classic()
+```
+
+A regression examines the correlation between \(X\) and \(Y\).
+
+```{r}
+path3_reg <- lm(Y ~ X, data = path3_data)
+path3_results <- tidy(path3_reg)
+```
+
+```{r echo=FALSE}
+path3_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+Results indicate a statistically significant correlation between \(X\) and \(Y\), although there is no edge directly from \(X\) to \(Y\). Notably, the coefficients are not identical to those used in the data generation process.
+
+## Collider path allows none
+
+In this path, both \(X\) and \(Y\) both influence \(K\) but do not influence each other. This scenario is illustrated by `d4`.
+
+```{r}
+d4 <- data.frame(from = "X", to = "K")
+d4 <- add_row(d4, data.frame(from = "Y", to = "K"))
+```
+
+```{r echo=FALSE}
+d4 %>%
+  kable() %>%
+  kable_classic()
+```
+
+A class of `Functions` is created to clarify the arguments in the functions for \(X\), \(Y\), and \(K\).
+
+```{r}
+path4_functions <- function_from_edge(d4)
+print(path4_functions)
+```
+
+The function for \(X\) determines its values to be normally-distributed.
+
+Both \(X\) and \(Y\) are independently defined with normally distributed values.
+
+```{r}
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+```
+
+```{r}
+function_Y <- function(n){
+  Y <- rnorm(n, mean = 0.1, sd = 0.005)
+  return(Y)
+}
+```
+
+The value of \(K\) depends on both \(X\) and \(Y\).
+
+```{r}
+function_K <- function(X, Y){
+  K <- 0.7 * X + 0.5 * Y + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(K)
+}
+```
+
+Connect all functions into `path4_functions`.
+
+```{r}
+path4_functions <- define(path4_functions, which = 'X', what = function_X)
+path4_functions <- define(path4_functions, which = 'Y', what = function_Y)
+path4_functions <- define(path4_functions, which = 'K', what = function_K)
+print(path4_functions)
+```
+
+Finally, data are generated using `path4_functions`
+
+```{r}
+set.seed(1)
+path4_data <- data_from_function(path4_functions, n = 25000)
+```
+
+```{r echo=FALSE}
+path4_data %>%
+  head() %>%
+  kable() %>%
+  kable_classic()
+```
+
+We then evaluate the correlation between \(X\) and \(Y\) by conducting a regression.
+
+```{r}
+path4_reg <- lm(Y ~ X, data = path4_data)
+path4_results <- tidy(path4_reg)
+```
+
+```{r echo=FALSE}
+path4_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+Results shows no significant correlation between X and Y, although there is a path between them.
+
+# Causal Discovery
+
+Among the four paths, only causal and mediator paths represent causal relationships, while the others are non-causal. We can guess the causal structure based on these properties using directional (\(d\))-separation. It is a criterion used to determine whether a set of variables, \(Z\), provides conditional independence between the pair of other variables (i.e., \(X\) and \(Y\)) within a causal graph.
+
+Specifically, we need to identify if \(X\) and \(Y\) are dependent, then we condition them on \(Z\). If \(X\) and \(Y\) is conditionally independent, then there is no causal path between them. The rules of \(d\)-separation are:
+
+1.	The path contains a mediator \(X \rightarrow M \rightarrow Y\) or a confounder \(X \leftarrow C \rightarrow Y\) where both \(M\) and \(C\) are in \(Z\); and
+2.	The path contains a collider \(X \rightarrow K \leftarrow Y\) where \(K\) is not in Z and none in Z is dependent on \(K\).
+
+Notably, when determining causal relationships, we include \(M\) in \(Z\) only if we aim to identify if there are any causal paths from \(X\) to \(Y\) that do not pass through \(M\).
+
+Now, we create additional versions of the mediator, confounder, and collider paths, each including the causal path. These versions, without and with a causal path, represent scenarios in which the null hypothesis and the alternative hypothesis are respectively accepted.
+
+```{r}
+d2_with_d <- add_row(d2, d)
+d3_with_d <- add_row(d3, d)
+d4_with_d <- add_row(d4, d)
+```
+
+```{r include=FALSE}
+d234_list <- list(d2_with_d, d3_with_d, d4_with_d)
+
+d234_g <- lapply(d234_list, graph_from_data_frame)
+
+d234_g_layout <- lapply(d234_g, layout_as_tree)
+set.seed(1)
+d234_g_coord <- mapply(ggnetwork, d234_g, d234_g_layout, SIMPLIFY = FALSE)
+
+d234_g_coord[[4]] <- slice(d234_g_coord[[1]], -3)
+d234_g_coord[[5]] <- slice(d234_g_coord[[2]], -3)
+d234_g_coord[[6]] <- slice(d234_g_coord[[3]], -2)
+
+d234_g_plots <-
+  d234_g_coord %>%
+  lapply(\(x)
+    x %>%
+      ggplot(aes(x, y, xend = xend, yend = yend)) +
+      geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+      geom_nodelabel(aes(label = name))
+  )
+
+d234_g_plots[c(1, 4)] <-
+  d234_g_plots[c(1, 4)] %>%
+  lapply(\(x)
+    x +
+      coord_flip() +
+      scale_x_reverse()
+  )
+
+d234_g_plots[c(2, 5)] <-
+  d234_g_plots[c(2, 5)] %>%
+  lapply(\(x)
+    x +
+      scale_x_reverse() +
+      scale_y_reverse()
+  )
+
+d234_g_plots[c(3, 6)] <-
+  d234_g_plots[c(3, 6)] %>%
+  lapply(\(x)
+    x +
+      coord_flip() +
+      scale_x_reverse() +
+      scale_y_reverse()
+  )
+
+d234_g_plots <-
+  d234_g_plots %>%
+  lapply(\(x) x + theme_void())
+```
+
+## Mediator without/with causal path
+
+Below we outline the data generation process in which the null hypothesis (left) and the alternative hypothesis (right) are accepted.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+ggarrange(
+  d234_g_plots[[4]],
+  d234_g_plots[[1]]
+)
+```
+
+A regression was already conducted for the mediator path without a causal path, identified as `path2_results`. We need to apply the same analysis to the version with a causal path.
+
+```{r}
+path2_d_functions <- function_from_edge(d2_with_d)
+print(path2_d_functions)
+```
+
+```{r}
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+
+function_M <- function(X){
+  M <- 0.7 * X + rnorm(length(X), mean = 0.3, sd = 0.005)
+  return(M)
+}
+
+function_Y <- function(X, M){
+  Y <- 0.25 * X + 0.5 * M + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+
+path2_d_functions <- define(path2_d_functions, which = "X", what = function_X)
+path2_d_functions <- define(path2_d_functions, which = "M", what = function_M)
+path2_d_functions <- define(path2_d_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+path2_d_data <- data_from_function(path2_d_functions, n = 25000)
+path2_d_reg <- lm(Y ~ X, data = path2_d_data)
+path2_d_results <- tidy(path2_d_reg)
+```
+
+We condition each version on \(Z\). In this case, it includes \(M\) to identify any causal paths from \(X\) to \(Y\) that do not pass through \(M\).
+
+```{r}
+path2_cond_reg <- lm(Y ~ X + M, data = path2_data)
+path2_cond_results <- tidy(path2_cond_reg)
+
+path2_cond_d_reg <- lm(Y ~ X + M, data = path2_d_data)
+path2_cond_d_results <- tidy(path2_cond_d_reg)
+```
+
+```{r echo=FALSE}
+rbind(
+  path2_results %>%
+    mutate(causal_path = "No", conditioned = "No")
+  ,path2_cond_results %>%
+    mutate(causal_path = "No", conditioned = "Yes")
+  ,path2_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "No")
+  ,path2_cond_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "Yes")
+) %>%
+  select(causal_path, conditioned, everything()) %>%
+  kable() %>%
+  kable_classic()
+```
+
+The regression results show that the coefficient of \(X\) is reduced from approximately 0.35 to nearly 0 when we condition on \(Z\) (which includes the mediator \(M\)) in the first version. When conditioning the second version on \(Z\), the coefficient of \(X\) is also reduced, from about 0.60 to 0.26; however, the effect of \(X\) on \(Y\) remains significant. This indicates that in the first scenario, conditioning on \(M\) successfully blocks the path from \(X\) to \(Y\), supporting the hypothesis of \(M\) being a complete mediator. In contrast, in the second scenario, \(M\) does not completely mediate the relationship between \(X\) and \(Y\), as \(X\) still has a direct effect on \(Y\).
+
+## Confounder without/with causal path
+
+We now apply the data generation process similarly, but in this instance, \(Z\) includes \(C\), as illustrated below.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+ggarrange(
+  d234_g_plots[[2]],
+  d234_g_plots[[5]]
+)
+```
+
+In addition to `path3_results` for the first version, we need to conduct a regression analysis for the second version.
+
+```{r}
+path3_d_functions <- function_from_edge(d3_with_d)
+print(path3_d_functions)
+```
+
+```{r}
+function_C <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+
+function_X <- function(C){
+  X <- 0.7 * C + rnorm(length(C), mean = 0.3, sd = 0.005)
+  return(X)
+}
+
+function_Y <- function(X, C){
+  Y <- 0.25 * X + 0.5 * C + rnorm(length(C), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+
+path3_d_functions <- define(path3_d_functions, which = "C", what = function_C)
+path3_d_functions <- define(path3_d_functions, which = "X", what = function_X)
+path3_d_functions <- define(path3_d_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+path3_d_data <- data_from_function(path3_d_functions, n = 25000)
+path3_d_reg <- lm(Y ~ X, data = path3_d_data)
+path3_d_results <- tidy(path3_d_reg)
+```
+
+Both versions are conditioned on \(Z\) to determine any causal paths from \(X\) to \(Y\) that can be identified when the non-causal path involving \(C\) is blocked.
+
+```{r}
+path3_cond_reg <- lm(Y ~ X + C, data = path3_data)
+path3_cond_results <- tidy(path3_cond_reg)
+
+path3_cond_d_reg <- lm(Y ~ X + C, data = path3_d_data)
+path3_cond_d_results <- tidy(path3_cond_d_reg)
+```
+
+```{r echo=FALSE}
+rbind(
+  path3_results %>%
+    mutate(causal_path = "No", conditioned = "No")
+  ,path3_cond_results %>%
+    mutate(causal_path = "No", conditioned = "Yes")
+  ,path3_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "No")
+  ,path3_cond_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "Yes")
+) %>%
+  select(causal_path, conditioned, everything()) %>%
+  kable() %>%
+  kable_classic()
+```
+
+For the first version, the coefficient of \(X\) is significantly reduced from approximately 0.7 to nearly 0 when we condition on \(Z\) (which includes the confounder \(C\)). In the second version, the coefficient is reduced from 0.96 to 0.24; however, \(X\) still exerts a significant effect on \(Y\).
+
+## Collider without/with causal path
+
+Unlike the mediator and confounder paths, the collider path exhibits an opposite result when we condition the effect of \(X\) on \(Y\).
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+ggarrange(
+  d234_g_plots[[3]],
+  d234_g_plots[[6]]
+)
+```
+
+We proceed with a similar analysis.
+
+```{r}
+path4_d_functions <- function_from_edge(d4_with_d)
+print(path4_d_functions)
+```
+
+```{r}
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+
+function_Y <- function(X){
+  Y <- 0.5 * X + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+
+function_K <- function(X, Y){
+  K <- 0.7 * X + 0.5 * Y + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(K)
+}
+
+path4_d_functions <- define(path4_d_functions, which = "X", what = function_X)
+path4_d_functions <- define(path4_d_functions, which = "Y", what = function_Y)
+path4_d_functions <- define(path4_d_functions, which = "K", what = function_K)
+
+set.seed(1)
+path4_d_data <- data_from_function(path4_d_functions, n = 25000)
+path4_d_reg <- lm(Y ~ X, data = path4_d_data)
+path4_d_results <- tidy(path4_d_reg)
+```
+
+The effect of \(X\) on \(Y\) is also conditioned on \(Z\) which includes \(K\). Notably, this approach violates the rules of \(d\)-separation.
+
+```{r}
+path4_cond_reg <- lm(Y ~ X + K, data = path4_data)
+path4_cond_results <- tidy(path4_cond_reg)
+
+path4_cond_d_reg <- lm(Y ~ X + K, data = path4_d_data)
+path4_cond_d_results <- tidy(path4_cond_d_reg)
+```
+
+```{r echo=FALSE}
+rbind(
+  path4_results %>%
+    mutate(causal_path = "No", conditioned = "No")
+  ,path4_cond_results %>%
+    mutate(causal_path = "No", conditioned = "Yes")
+  ,path4_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "No")
+  ,path4_cond_d_results %>%
+    mutate(causal_path = "Yes", conditioned = "Yes")
+) %>%
+  select(causal_path, conditioned, everything()) %>%
+  kable() %>%
+  kable_classic()
+```
+
+Now, we can observe why including \(K\) in \(Z\) is problematic. In the first version, the coefficient of \(X\) changes from nearly 0 to -0.28, indicating a significant effect on \(Y\). In our data generation process for this scenario, \(X\) and \(Y\) are independent. In the second version, they are dependent, but conditioning on \(Z\) reverses the effect in the same direction observed in the first version. Hence, including \(K\) in \(Z\) reverses the relationship between a pair of other variables in a causal graph.
+
+# Causal Effect Estimation
+
+In the previous section, we used different causal structures but similar functions to generate the data, specifically using linear functions. If the linear regression model is correctly specified, then the estimated coefficients should reflect the data generation process. However, what if we use non-linear functions to generate the data? Can the linear regression model, especially one that strictly involves additive terms, still accurately estimate the causal effect when properly specified?
+
+## Causal path with a logical "AND" rule
+
+Below we create a data frame `d5` which has a simple causal structure, i.e., two causal paths from either \(X1\) and \(X2\) to \(Y\).
+
+```{r}
+d5 <- data.frame(from = "X1", to = "Y")
+d5 <- add_row(d5, data.frame(from = "X2", to = "Y"))
+```
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+d5 %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+We also define a class of `Functions` to clarify the arguments required for each function.
+
+```{r}
+d5_functions <- function_from_edge(d5)
+print(d5_functions)
+```
+
+For both \(X1\) and \(X2\), we determine their functions to generate data of 0 or 1 with the length `n`. Meanwhile, \(Y\) is determine by its function to apply a logical "AND" rule: if \(X1\) and \(X2\) are both equal to 1, then \(Y\) is equal to 1; otherwise, it is 0.
+
+Interpreting the correctness of the estimated coefficient is not as intuitive as when using a linear function. Nonetheless, the logical "AND" rule for generating the data can be represented by the linear function:
+
+\[Y = -0.25 + 0.5 \times X1 + 0.5 \times X2\]
+
+1. If both \(X1\) and \(X2\) are equal to 0, then \(Y\) equals -0.25, rounded to 0;
+2. If only one of \(X1\) and \(X2\) equals 1, then \(Y\) equals 0.25, rounded to 0; and
+3. If both \(X1\) and \(X2\) equal 1, then \(Y\) equals 0.75, rounded to 1.
+
+We conduct a regression using the generated data to estimate the effects of either \(X1\) or \(X2\) on \(Y\).
+
+```{r}
+function_X1 <- function(n){
+  X1 <- sample(c(0, 1), n, replace = T)
+  return(X1)
+}
+
+function_X2 <- function(n){
+  X2 <- sample(c(0, 1), n, replace = T)
+  return(X2)
+}
+
+function_Y <- function(X1, X2){
+  Y <- as.numeric(X1 == 1 & X2 == 1)
+  return(Y)
+}
+
+d5_functions <- define(d5_functions, which = "X1", what = function_X1)
+d5_functions <- define(d5_functions, which = "X2", what = function_X2)
+d5_functions <- define(d5_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+d5_data <- data_from_function(d5_functions, n = 25000)
+d5_reg <- lm(Y ~ X1 + X2, data = d5_data)
+d5_results <- tidy(d5_reg)
+```
+
+```{r echo=FALSE}
+d5_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+The results accurately show the estimated coefficients for \(X1\) and \(X2\). The interpretation is even more intuitive in this special case if we simply compute \(\hat{Y}\) (Y_hat) to predict \(Y\), where \(Y = \hat{Y} + \epsilon\); thus, \(\epsilon\) is the error of the model in predicting \(Y\).
+
+We create test data which simply includes all the possible combinations of \(X1\) and \(X2\). Then, we compute \(\hat{Y}\) using the test data and the regression model fitted to the generated data.
+
+```{r}
+test_data <- expand.grid(X1 = c(0, 1), X2 = c(0, 1))
+d5_test <- mutate(test_data, Y = mapply(function_Y, X1, X2))
+d5_test <- mutate(d5_test, Y_hat = predict(d5_reg, newdata = d5_test))
+d5_test <- mutate(d5_test, Y_hat = round(Y_hat))
+```
+
+```{r echo=FALSE}
+d5_test %>%
+  kable() %>%
+  kable_classic()
+```
+
+As observed, even when using a logical “AND” rule to generate the data, a linear regression model can still accurately estimate the causal effect if the model is correctly specified.
+
+## Causal path with a logical "OR" rule
+
+Now, we apply the same approach but using a logical "OR" rule. If either \(X1\) or \(X2\) equals 1, then \(Y\) is set to 1.
+
+```{r}
+d6_functions <- function_from_edge(d5)
+
+function_Y <- function(X1, X2){
+  Y <- as.numeric(X1 == 1 | X2 == 1)
+  return(Y)
+}
+
+d6_functions <- define(d6_functions, which = "X1", what = function_X1)
+d6_functions <- define(d6_functions, which = "X2", what = function_X2)
+d6_functions <- define(d6_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+d6_data <- data_from_function(d6_functions, n = 25000)
+d6_reg <- lm(Y ~ X1 + X2, data = d6_data)
+d6_results <- tidy(d6_reg)
+
+d6_test <- mutate(test_data, Y = mapply(function_Y, X1, X2))
+d6_test <- mutate(d6_test, Y_hat = predict(d6_reg, newdata = d6_test))
+d6_test <- mutate(d6_test, Y_hat = round(Y_hat))
+```
+
+```{r echo=FALSE}
+d6_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+As previously described, we can also represent the logical "OR" rule with the linear function:
+
+\[Y = 0.25 + 0.5 \times X1 + 0.5 \times X2\]
+
+1. If both \(X1\) and \(X2\) are equal to 0, then \(Y\) equals 0.25, rounded to 0;
+2. If only one of \(X1\) and \(X2\) equals 1, then \(Y\) equals 0.75, rounded to 1; and
+3. If both \(X1\) and \(X2\) equal 1, then \(Y\) equals 1.25, rounded to 1.
+
+```{r echo=FALSE}
+d6_test %>%
+  kable() %>%
+  kable_classic()
+```
+
+As observed, when using a logical “OR” rule to generate the data, a linear regression model can also accurately estimate the causal effect if the model is correctly specified.
+
+Are there other non-linear functions that cannot be estimated by a regression model, especially one that strictly involves additive terms?
+
+## Causal path with a logical "XOR" rule
+
+Yes. A logical "XOR" rule is one of many data-generation processes that cannot be accurately estimated by such a regression model. This rule dictates that \(Y\) is set to 1, only if both \(X1\) and \(X2\) are either 0 or 1 but not both.
+
+```{r}
+d7_functions <- function_from_edge(d5)
+
+function_Y <- function(X1, X2){
+  Y <- as.numeric((X1 == 1 & X2 == 0) | (X1 == 0 & X2 == 1))
+  return(Y)
+}
+
+d7_functions <- define(d7_functions, which = "X1", what = function_X1)
+d7_functions <- define(d7_functions, which = "X2", what = function_X2)
+d7_functions <- define(d7_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+d7_data <- data_from_function(d7_functions, n = 25000)
+d7_reg <- lm(Y ~ X1 + X2, data = d7_data)
+d7_results <- tidy(d7_reg)
+
+d7_test <- mutate(test_data, Y = mapply(function_Y, X1, X2))
+d7_test <- mutate(d7_test, Y_hat = predict(d7_reg, newdata = d7_test))
+d7_test <- mutate(d7_test, Y_hat = round(Y_hat))
+```
+
+```{r echo=FALSE}
+d7_results %>%
+  kable() %>%
+  kable_classic()
+```
+
+Using the estimated coefficients of the regression model, we can formulate the linear function:
+
+\[Y = 0.5 + 0 \times X1 + 0 \times X2\]
+
+However, this function cannot represent a logical "XOR" rule:
+
+1. If both \(X1\) and \(X2\) are equal to 0, then \(Y\) equals 0.5, which is rounded to 1;
+2. If only one of \(X1\) and \(X2\) equals 1, then \(Y\) remains 0.5, also rounded to 1;
+3. If both \(X1\) and \(X2\) equal 1, then \(Y\) again equals 0.5, rounded to 1.
+
+```{r echo=FALSE}
+d7_test %>%
+  kable() %>%
+  kable_classic()
+```
+
+Therefore, a linear regression model cannot accurately estimate the causal effect when the data-generation process involves non-linear functions similar to a logical “XOR” rule, even if the model is correctly specified.
+
+# Miscellanous
+
+## Measurement Error
+
+In the real world, our data consist primarily of measurements of actual variables, which are often latent variables (i.e., abstract constructs). For example, cognitive ability is often measured by an intelligence quotient (IQ) score. Furthermore, we also categorize IQ scores into several categories, which represent another form of variable: IQ category. First, IQ scoring captures only a portion of a cognitive ability, leading to information loss. When IQ is further categorized, even more information is lost.
+
+We can represent a measured variable as a vertex to which an edge is drawn from another vertex that represents the actual variable. For instance, consider a causal path from \(X\) to \(Y\). Let's denote their measured variables as \(X'\) and \(Y'\), respectively. Since value of \(X'\) depends on \(X\), and \(Y'\) depends on \(Y\), we draw an edge from \(X\) to \(X'\) and another from \(Y\) to \(Y'\). Therefore, in a causal graph, measurement is simply a form of causal path from an actual to a measured variable.
+
+```{r}
+d8 <- data.frame(from = "X", to = "Y")
+d8 <- add_row(d8, data.frame(from = "X", to = "Xm"))
+d8 <- add_row(d8, data.frame(from = "UX", to = "Xm"))
+d8 <- add_row(d8, data.frame(from = "Y", to = "Ym"))
+d8 <- add_row(d8, data.frame(from = "UY", to = "Ym"))
+```
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+d8 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+If a measurement error introduced in a set of measured variables depends on the same variable \(U_XY\) (UXY) which is beyond their actual variables, then it is called a dependent measurement error; otherwise, it is independent. The figure below shows independent (left) and dependent (right) measurement errors.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+d8_nondif <- list()
+
+set.seed(1)
+d8_nondif[[1]] <- d8 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+
+set.seed(1)
+d8_nondif[[2]] <- d8 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0.5, name = "UXY", xend = 1, yend = 0.975)) %>%
+  add_row(data.frame(x = 1, y = 0.5, name = "UXY", xend = 1, yend = 0.025)) %>%
+  add_row(data.frame(x = 1, y = 0.5, name = "UXY", xend = 1, yend = 0.5)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+
+ggarrange(
+  d8_nondif[[1]],
+  d8_nondif[[2]]
+)
+```
+
+If a measurement error introduced in a measured variable depends on any other actual variables beyond its own actual variable, then it is called differential measurement error; otherwise, it is nondifferential. Hence, the previous measurement errors are specifically: (1) independent, nondifferential; and (2) dependent, nondifferential. The figure below shows differential measurement error. Specifically, it shows an independent, differential measurement error. A measurement error of \(Y'\) depends on \(X\) (left), or a measurement error of \(X'\) depends on \(Y\) (right).
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+d8_ind_dif <- list()
+
+set.seed(1)
+d8_ind_dif[[1]] <- d8 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 1.5, yend = 0.025)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+
+set.seed(1)
+d8_ind_dif[[2]] <- d8 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 1.5, yend = 0.975)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+
+ggarrange(
+  d8_ind_dif[[1]],
+  d8_ind_dif[[2]]
+)
+```
+
+Therefore, we can categorize measurement errors based on their dependencies and differentials into four types:
+
+1. Independent, nondifferential;
+2. Dependent, nondifferential;
+3. Independent, differential; and
+4. Dependent, differential.
+
+Now, let's generate data with measured variables. We use the same variables and functions but introduce different versions of errors, ranging from smaller to larger errors.
+
+```{r}
+I <- seq(10)
+UX_epsilon <- seq(0.005, 4, length = length(I))
+UY_epsilon <- seq(0.005, 8, length = length(I))
+
+d8_results <- list()
+
+for(i in I){
+  d8_functions <- function_from_edge(d8)
+  
+  function_X <- function(n){
+    X <- rnorm(n, mean = 0, sd = 1)
+    return(X)
+  }
+  
+  function_UX <- function(n){
+    UX <- rnorm(n, mean = 0, sd = UX_epsilon[[i]])
+    return(UX)
+  }
+  
+  function_Xm <- function(X, UX){
+    Xm <- X + UX
+    return(Xm)
+  }
+  
+  function_Y <- function(X){
+    Y <- 0.5 * X + rnorm(length(X), mean = 0.1, sd = 0.005)
+    return(Y)
+  }
+  
+  function_UY <- function(n){
+    UY <- rnorm(n, mean = 0, sd = UY_epsilon[[i]])
+    return(UY)
+  }
+  
+  function_Ym <- function(Y, UY){
+    Ym <- Y + UY
+    return(Ym)
+  }
+  
+  d8_functions <- define(d8_functions, which = "X", what = function_X)
+  d8_functions <- define(d8_functions, which = "UX", what = function_UX)
+  d8_functions <- define(d8_functions, which = "Xm", what = function_Xm)
+  d8_functions <- define(d8_functions, which = "Y", what = function_Y)
+  d8_functions <- define(d8_functions, which = "UY", what = function_UY)
+  d8_functions <- define(d8_functions, which = "Ym", what = function_Ym)
+  
+  set.seed(1)
+  d8_data <- data_from_function(d8_functions, n = 25000)
+  d8_reg <- lm(Ym ~ Xm, data = d8_data)
+  d8_results[[i]] <- tidy(d8_reg)
+}
+```
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+d8_results_rbind <- d8_results %>%
+  do.call(rbind,.) %>%
+  group_by(term) %>%
+  mutate(i = seq(n())) %>%
+  ungroup() %>%
+  left_join(
+    data.frame(term = "(Intercept)", i = I, epsilon = UY_epsilon) %>%
+      rbind(
+        data.frame(term = "Xm", i = I, epsilon = UX_epsilon)
+      ),
+    by = join_by(term, i)
+  ) %>%
+  mutate(lb = estimate - qnorm(0.975) * std.error) %>%
+  mutate(ub = estimate + qnorm(0.975) * std.error)
+
+d8_plot <- list()
+
+d8_plot[[1]] <- d8_results_rbind %>%
+  ggplot(aes(epsilon, estimate)) +
+  geom_hline(aes(yintercept = ifelse(term == "Xm", 0.5, 0.1)), lty = 2) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ term, scales = "free")
+
+d8_plot[[2]] <- d8_results_rbind %>%
+  ggplot(aes(epsilon, p.value)) +
+  geom_hline(yintercept = 0.05, lty = 2) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ term, scales = "free")
+
+ggarrange(
+  d8_plot[[1]],
+  d8_plot[[2]],
+  ncol = 1,
+  nrow = 2
+)
+```
+
+We observe that larger errors shift the estimated coefficients away from the true values. An error \(\epsilon\) of 2.11 or more leads to the conclusion that the effect of \(X\) on \(Y\) is not significant, even though it should be significant according to the data-generation process.
+
+## Missing Value
+
+We can simulate how missing values occur using the same principles as those of measurement error. Missing values introduced in a measured variable depend on its missingness variable \(R\).
+
+There are three types of missing-value mechanisms:
+
+1. Missing completely at random (MCAR): Missing values depend on neither the actual variable nor other variables. In the figure below, both \(X'\) and \(Y'\) demonstrate MCAR.
+
+```{r}
+d9 <- data.frame(from = "X", to = "Y")
+d9 <- add_row(d9, data.frame(from = "X", to = "Xm"))
+d9 <- add_row(d9, data.frame(from = "UX", to = "Xm"))
+d9 <- add_row(d9, data.frame(from = "RX", to = "Xm"))
+d9 <- add_row(d9, data.frame(from = "Y", to = "Ym"))
+d9 <- add_row(d9, data.frame(from = "UY", to = "Ym"))
+d9 <- add_row(d9, data.frame(from = "RY", to = "Ym"))
+```
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+d9 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 0.7, name = "RX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0.3, name = "RY", xend = 1.025, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+2. Missing at random (MAR): Missing values depend on other variables but not on the actual variable. In the figure below, the missingness variable \(R_X\) (RX) depends on \(Y\), while \(R_Y\) (RY) depends on \(X\). Therefore, both \(X'\) and \(Y'\) are MAR.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+d9 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 0.7, name = "RX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 1.5, yend = 0.675)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0.3, name = "RY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 1.5, yend = 0.325)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+3. Missing not at random (MNAR): Missing values depend on the actual variable, potentially among others. In the figure below, the missingness variable \(R_X\) (RX) depends on \(X\) itself, while \(R_Y\) (RY) depends on \(Y\) itself. Therefore, both \(X'\) and \(Y'\) demonstrate MNAR. This scenario can also includes situations where missingness is influenced by multiple variables. For instance, the figure below shows that the missingness variable \(R_Y\) (RY) depends on both \(X\) and \(Y\). This would still classify as MNAR.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+d9 %>%
+  filter(from %in% c("X","Y") & to %in% c("X","Y")) %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X'", xend = 1, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 1, name = "UX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 1.5, y = 0.7, name = "RX", xend = 1.025, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 1.475, yend = 0.7)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y'", xend = 1, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0, name = "UY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 1.5, y = 0.3, name = "RY", xend = 1.025, yend = 0)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 1.475, yend = 0.3)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 1.5, yend = 0.325)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+Now, let's generate data with measured variables where each also depends on its missingness variable \(R\). We use the same variables, functions, and errors but introduce different versions of missingness, ranging from lower to higher proportions of missing values.
+
+```{r}
+I <- seq(10)
+RX_p <- seq(0, 0.95, length = length(I))
+RX_p <- mapply(c, 1 - RX_p, RX_p)
+RY_p <- seq(0, 0.95, length = length(I))
+RY_p <- mapply(c, 1 - RY_p, RY_p)
+
+d9_results <- list()
+
+for(i in I){
+  d9_functions <- function_from_edge(d9)
+  
+  function_X <- function(n){
+    X <- rnorm(n, mean = 0, sd = 1)
+    return(X)
+  }
+  
+  function_UX <- function(n){
+    UX <- rnorm(n, mean = 0, sd = 0.01)
+    return(UX)
+  }
+  
+  function_RX <- function(n){
+    RX <- sample(c(0, 1), size = n, replace = TRUE, prob = RX_p[, i])
+    return(RX)
+  }
+  
+  function_Xm <- function(X, UX, RX){
+    Xm <- ifelse(RX == 1, NA, X + UX)
+    return(Xm)
+  }
+  
+  function_Y <- function(X){
+    Y <- 0.5 * X + rnorm(length(X), mean = 0.1, sd = 0.005)
+    return(Y)
+  }
+  
+  function_UY <- function(n){
+    UY <- rnorm(n, mean = 0, sd = 0.01)
+    return(UY)
+  }
+  
+  function_RY <- function(n){
+    RY <- sample(c(0, 1), size = n, replace = TRUE, prob = RY_p[, i])
+    return(RY)
+  }
+  
+  function_Ym <- function(Y, UY, RY){
+    Ym <- ifelse(RY == 1, NA, Y + UY)
+    return(Ym)
+  }
+  
+  d9_functions <- define(d9_functions, which = "X", what = function_X)
+  d9_functions <- define(d9_functions, which = "UX", what = function_UX)
+  d9_functions <- define(d9_functions, which = "RX", what = function_RX)
+  d9_functions <- define(d9_functions, which = "Xm", what = function_Xm)
+  d9_functions <- define(d9_functions, which = "Y", what = function_Y)
+  d9_functions <- define(d9_functions, which = "UY", what = function_UY)
+  d9_functions <- define(d9_functions, which = "RY", what = function_RY)
+  d9_functions <- define(d9_functions, which = "Ym", what = function_Ym)
+  
+  set.seed(1)
+  d9_data <- data_from_function(d9_functions, n = 25000)
+  d9_reg <- lm(Ym ~ Xm, data = d9_data)
+  d9_results[[i]] <- tidy(d9_reg)
+}
+```
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+d9_results_rbind <- d9_results %>%
+  do.call(rbind,.) %>%
+  group_by(term) %>%
+  mutate(i = seq(n())) %>%
+  ungroup() %>%
+  left_join(
+    data.frame(term = "(Intercept)", i = I, p = RY_p[2,]) %>%
+      rbind(
+        data.frame(term = "Xm", i = I, p = RX_p[2,])
+      ),
+    by = join_by(term, i)
+  ) %>%
+  mutate(lb = estimate - qnorm(0.975) * std.error) %>%
+  mutate(ub = estimate + qnorm(0.975) * std.error)
+
+d9_plot <- list()
+
+d9_plot[[1]] <- d9_results_rbind %>%
+  ggplot(aes(p, estimate)) +
+  geom_hline(aes(yintercept = ifelse(term == "Xm", 0.5, 0.1)), lty = 2) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ term, scales = "free")
+
+d9_plot[[2]] <- d9_results_rbind %>%
+  ggplot(aes(p, p.value)) +
+  geom_hline(yintercept = 0.05, lty = 2) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ term, scales = "free")
+
+ggarrange(
+  d9_plot[[1]],
+  d9_plot[[2]],
+  ncol = 1,
+  nrow = 2
+)
+```
+
+We observe that higher proportions of missing values shift the estimated coefficients away from the true values. A missing proportion \(p\) of approximately 0.50 or more results in a substantially incorrect estimate for the effect of \(X\) on \(Y\), although the results remain statistically significant in cases of MCAR without missing value imputation.
+
+## Time-Varying Causation
+
+The value of a variable at time \(t\) may determine that of the same variable at time \(t+1\). This variable may be a cause (or an exposure/intervention), an effect (or an outcome/competing risk), or a covariate (or a mediator/confounder/collider). A cause-effect relationship that involves such properties is called time-varying causation. The figure below demonstrates both time-varying exposure and outcome. Since a standard causal graph should be a directed acyclic graph (DAG), we represent the same variable at different times as multiple vertices.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+data.frame(from = "X(t)", to = "Y(t)") %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X(t)", xend = 0.975, yend = 1)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y(t)", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X(t+1)", xend = 1, yend = 0.035)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y(t+1)", xend = 1, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+To simulate time-varying causation, first, we need to generate data at the initial time \(t=0\). However, time-varying causation must be represented as a directed cyclic graph (DCG), in which loops are allowed. Nevertheless, when generating data at the first step, any loops must be avoided. Hence, any edge from and to the same vertex is not included yet.
+
+```{r}
+d10 <- data.frame(from = "X", to = "Y")
+
+d10_functions <- function_from_edge(d10)
+
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  X <- abs(X)
+  return(X)
+}
+
+function_Y <- function(X){
+  Y <- 0.5 * X + rnorm(length(X), mean = 0.1, sd = 0.005)
+  return(Y)
+}
+
+d10_functions <- define(d10_functions, which = "X", what = function_X)
+d10_functions <- define(d10_functions, which = "Y", what = function_Y)
+
+d10_data <- data_from_function(d10_functions, n = 10000)
+```
+
+We must note that `rcausim` uses looping to simulate time-varying causation without differentiating the names of a variable at different times. For example, the same name \(X\) is used for a variable \(X\) at time \(t\) and \(t+1\); hence, the causal graph will look like the figure below in the context of `rcausim`. In this example, we use time-varying outcome, where the value of \(Y\) at time \(t\) also determines the value of the same variable at time \(t+1\) in addition to the values of variable \(X\).
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+set.seed(1)
+data.frame(from = "X", to = "Y") %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 1, name = "X", xend = 0.975, yend = 0.025)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.975, yend = 0)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y", xend = 1, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+Therefore, before generating the data for \(t>0\), we need to add edges from and to the same variables. The function is also modified to include the variable itself as one of the arguments. The class of `Functions` should be redefined with the modified function.
+
+Since this step assumes we already generated the data at \(t=0\), we need to use the output from the previous step, i.e., `d10_data`, as the input in this step.
+
+In simulating time-varying causation, we also need to determine a maximum time \(t_{max}\) for each instance to be simulated. The `T_max` argument facilitates this feature.
+
+```{r}
+d10 <- add_row(d10, data.frame(from = "Y", to = "Y"))
+
+function_Y <- function(X, Y){
+  Y <- 0.5 * X + 1.1 * Y
+  return(Y)
+}
+
+d10_functions <- define(d10_functions, which = "Y", what = function_Y)
+
+set.seed(1)
+d10_T_max <- rpois(nrow(d10_data), lambda = 25)
+d10_data <- time_varying(d10_functions, data = d10_data, T_max = d10_T_max)
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=7}
+d10_plot <- list()
+
+set.seed(1); d10_plot[[1]] <- d10_data %>%
+  filter(i %in% sample(unique(i), 5)) %>%
+  gather(variable, value, -i, -t, -t_max) %>%
+  ggplot(aes(t, value)) +
+  geom_line() +
+  facet_grid(i ~ variable, scales = "free_y")
+
+d10_plot[[2]] <- d10_data %>%
+  group_by(i) %>%
+  filter(t == max(t)) %>%
+  ungroup() %>%
+  gather(variable, value, -i, -t, -t_max) %>%
+  group_by(t, variable) %>%
+  summarize(value = mean(value), .groups = "drop") %>%
+  ggplot(aes(t, value)) +
+  geom_line() +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2)
+
+ggarrange(
+  d10_plot[[1]],
+  d10_plot[[2]],
+  ncol = 1,
+  nrow = 2
+)
+```
+
+The figure above shows the values of \(X\) and \(Y\) at different times for randomly-sampled instances (top) and their time-wise values summarized from all instances (bottom). We can observe the values of \(Y\) changing over time for each instance, while the values of \(X\) do not. The summary values of \(X\) vary at different times due to inter-instance variability each time.
+
+## Bidirectional Causation
+
+Two variables may affect each other simultaneously or in a feedback loop. For example, the value of \(Y\) depends on the value of \(X\), and concurrently, the value of \(X\) also depends on the value of \(Y\). This inter-dependency is known as bidirectional causation.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+data.frame(from = "X", to = "Y") %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y", xend = 0.5, yend = 0.975)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.15) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+In practical scenarios, however, even if two variables affect each other, we model their relationship at discrete time steps. Therefore, we can depict bidirectional causation in a standard causal graph which uses a DAG, representing the variables at different times \(t\) and \(t+1\), as shown below.
+
+```{r echo=FALSE, fig.height=3.5, fig.width=7}
+data.frame(from = "X(t)", to = "Y(t)") %>%
+  graph_from_data_frame() %>%
+  ggnetwork(layout = layout_as_tree(.)) %>%
+  add_row(data.frame(x = 0.5, y = 0, name = "Y(t)", xend = 0.975, yend = 0.975)) %>%
+  add_row(data.frame(x = 1, y = 1, name = "X(t+1)", xend = 1, yend = 0.035)) %>%
+  add_row(data.frame(x = 1, y = 0, name = "Y(t+1)", xend = 1, yend = 0)) %>%
+  ggplot(aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(arrow = arrow(type = "closed"), curvature = 0.05) +
+  geom_nodelabel(aes(label = name)) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_void()
+```
+
+To simulate bidirectional causation using the `time_varying` function in `rcausim`, we first generate data at \(t=0\). This initial step requires a DAG, avoiding any loops.
+
+```{r}
+d11 <- data.frame(from = "X", to = "Y")
+
+d11_functions <- function_from_edge(d11)
+
+function_X <- function(n){
+  X <- rnorm(n, mean = 0, sd = 1)
+  return(X)
+}
+
+function_Y <- function(X){
+  Y <- 0.5 * X + rnorm(length(X), mean = 0, sd = 0.00001)
+  return(Y)
+}
+
+d11_functions <- define(d11_functions, which = "X", what = function_X)
+d11_functions <- define(d11_functions, which = "Y", what = function_Y)
+
+d11_data <- data_from_function(d11_functions, n = 10000)
+```
+
+After generating initial data, subsequent time points involve adding reciprocal edges to model the ongoing interaction between \(X\) and \(Y\). In this example, we add an edge from the parent vertex of \(X\)'s vertex, which represents \(Y\). As described in the previous section, we need to provide the initial data `d11_data` and the maximum times `d11_T_max`.
+
+```{r}
+d11 <- add_row(d11, data.frame(from = "Y", to = "X"))
+
+function_X <- function(Y){
+  X <- 2 * Y + rnorm(length(Y), mean = 0, sd = 0.00001)
+  return(X)
+}
+
+d11_functions <- define(d11_functions, which = "X", what = function_X)
+
+set.seed(1)
+d11_T_max <- rpois(nrow(d11_data), lambda = 25)
+d11_data <- time_varying(d11_functions, data = d11_data, T_max = d11_T_max)
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=7}
+d11_plot <- list()
+
+set.seed(1); d11_plot[[1]] <- d11_data %>%
+  filter(i %in% sample(unique(i), 5)) %>%
+  gather(variable, value, -i, -t, -t_max) %>%
+  group_by(i, variable) %>%
+  mutate(z_value = scale(value)) %>%
+  ggplot(aes(t, z_value)) +
+  geom_line() +
+  facet_grid(i ~ variable, scales = "free_y")
+
+d11_plot[[2]] <- d11_data %>%
+  group_by(i) %>%
+  filter(t == max(t)) %>%
+  ungroup() %>%
+  gather(variable, value, -i, -t, -t_max) %>%
+  group_by(t, variable) %>%
+  summarize(value = mean(value), .groups = "drop") %>%
+  ggplot(aes(t, value)) +
+  geom_line() +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2)
+
+ggarrange(
+  d11_plot[[1]],
+  d11_plot[[2]],
+  ncol = 1,
+  nrow = 2
+)
+```
+
+The figure above demonstrates the values of \(X\) and \(Y\) over time for randomly-sampled instances (top) and summarizes their time-wise values across all instances (bottom). As time-varying causation, both variables exhibit changes over time, reflecting the bidirectional causation they exert on each other.
+
+
+
